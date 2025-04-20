@@ -2,7 +2,7 @@
 const {task} =require("hardhat/config")
 
 //定义task的名称并且编写需要执行的代码逻辑
-task("deploy-fundme").setAction(async(taskArgs,hre)=>{
+task("deploy-fundme","deploy and verify fundme contract").setAction(async(taskArgs,hre)=>{
     //1、创建合约工厂
         //使用await关键字将该操作进行挂起，意思是这句代码执行完毕之后，才能执行后续的操作
         const fundMeFactory = await ethers.getContractFactory("FundMe")

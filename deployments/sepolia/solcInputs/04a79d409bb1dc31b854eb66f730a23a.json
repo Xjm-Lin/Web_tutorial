@@ -1,0 +1,39 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\n// solhint-disable-next-line interface-starts-with-i\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(\n    uint80 _roundId\n  ) external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n\n  function latestRoundData()\n    external\n    view\n    returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n}\n"
+    },
+    "contracts/FundMe.sol": {
+      "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.20;\r\n//导入chainLink预言机的Aggregator合约\r\nimport {AggregatorV3Interface} from \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\r\n\r\n\r\n\r\n//1、创建一个收款的函数\r\n//2、记录投资人并且查看\r\n//3、在锁定期间，达到目标值的话，生产商可以进行提款\r\n//4、在锁定期间，没有达到目标值的话，投资人在锁定期以后可以进行退款\r\n\r\ncontract FundMe {\r\n    //定义一个mapping属性用于记录用户的地址(addreee)和投资金额，address是Key，uint是金额\r\n    mapping (address => uint256) public fundersToAmount;\r\n\r\n    //用于存储用户输入的WEI和ETH进行比较\r\n    uint256 constant MINIMUM_VALUE = 100 * 10 ** 18;\r\n\r\n    //定义一个常量用于存储筹集到的用户的资金\r\n    uint256 constant TARGET=1000 * 10 ** 18;\r\n\r\n    //定义一个所有者，用于后续的权限控制使用，只有提取人的地址和Owner的地址相同的时候，才能提取这笔资金\r\n    //放到构造函数中进行初始化\r\n    //后续提供一个修改所有者的函数，transferOwnership()函数\r\n    address public Owner;\r\n\r\n    //创建一个记录时间的变量\r\n    uint256 deploymentTimeStamp;//记录当前的筹集时间\r\n    uint256 lockTime;//记录时间的锁定周期\r\n\r\n    //记录ERC20合约地址的变量\r\n    address erc20Addr;\r\n\r\n    //记录getFund是否执行成功,默认为false\r\n    bool public getFundSuccess =false;\r\n    \r\n    //预言机合约中需要用到的变量\r\n    AggregatorV3Interface public dataFeed;\r\n\r\n    constructor(uint256 _lockTime,address dataFeedAddr){\r\n        //在构造器中初始化变量dataFeed，调用AggregatorV3Interface函数\r\n        //传入的参数是ETH对比USD的价格\r\n        dataFeed=AggregatorV3Interface(dataFeedAddr);\r\n        //初始化当前用户\r\n        Owner=msg.sender;\r\n        //定义当前的筹集时间\r\n        deploymentTimeStamp=block.timestamp;\r\n        //定义当前锁定的周期\r\n        lockTime=_lockTime;\r\n    }\r\n\r\n    //创建一个收款函数用于进行收款，需要定义payable关键字才可以进行收款\r\n    function fund() external payable{\r\n        require(converEthToUsd(msg.value)>=MINIMUM_VALUE,\"send more ETH\");\r\n        require(block.timestamp<deploymentTimeStamp+lockTime,\"windows is closed\");\r\n        fundersToAmount[msg.sender]=msg.value;\r\n    }\r\n\r\n    //chainlink预言机中的合约\r\n    //通过调用latestRoundData函数返回的answer值是价格的意思\r\n    function getChainlinkDataFeedLatestAnswer() public view returns (int) {\r\n        // prettier-ignore\r\n        (\r\n            /* uint80 roundID */,\r\n            int answer,\r\n            /*uint startedAt*/,\r\n            /*uint timeStamp*/,\r\n            /*uint80 answeredInRound*/\r\n        ) = dataFeed.latestRoundData();\r\n        return answer;\r\n    }\r\n\r\n    //定义一个转换函数，用于计算ETH对比USD（美元）以太币此时的价格\r\n    //计算的公式为:(用户输入的数量 * ETH的价格 = USD总价格)\r\n    //参数ethAmount只的是用户输入的数量\r\n    function converEthToUsd(uint256 ethAmount) internal view returns(uint256){\r\n        //调用getChainlinkDataFeedLatestAnswer函数获取ETH此时的价格是多少\r\n        uint256 ethPrice = uint(getChainlinkDataFeedLatestAnswer());\r\n        //根据公式将最终的USD总价格进行返回，因为对比的是美元USD，所以返回值ethPrice/10**8\r\n        return ethAmount*ethPrice/(10**8);\r\n    }\r\n\r\n    //定义修改提取资金的所有者\r\n    function transferOwnership(address newOwner) public onlyOwner {\r\n        //校验当前的提取者地址和构造函数中初始化的地址是不是相同\r\n        //require(msg.sender==Owner,\"this function can only be called by owner\");\r\n        //将新的所有者赋值给Owner变量\r\n        Owner=newOwner;\r\n    }\r\n\r\n    //定义一个修改fundersToAmount变量值的函数，只能指定ERC20合约进行调用\r\n    function setFundersToAmount(address funder,uint256 amountToUpdate) external {\r\n        //添加校验，只有调用者的地址和ERC20合约的地址一样的情况下，才能执行后续的才做\r\n        require(msg.sender==erc20Addr,\"you do not have permission to call this function\");\r\n        //校验通过，则执行修改fundersToAmount变量的value的操作\r\n        fundersToAmount[funder]=amountToUpdate;\r\n    }\r\n    \r\n    //修改ERC20合约地址的函数，用于权限控制，只能是ERC合约地址才能调用上面的setFundersToAmount函数\r\n    function setErc20Addr(address _erc20Addr) public onlyOwner {\r\n        //只有合约的创建者才能修改ERC20合约的地址\r\n        erc20Addr=_erc20Addr;\r\n    }\r\n\r\n\r\n    //提款函数：该函数表示获取筹集到的资金，只能通过外部调取该函数\r\n    function getFund() external windowClosed onlyOwner {\r\n        //使用require进行判断，判断本合约地址中筹集到资金是否大于最大值(TARGET)，如果满足就执行该代码\r\n        require(converEthToUsd(address(this).balance)>=TARGET,\"Target is not reached\");\r\n        \r\n\r\n        //(1)transfer的用法：使用当前用户的address进行transfer转账操作，payable是进行类型转换，使它可以进行转账交易\r\n        //payable(msg.sender).transfer(address(this).balance);\r\n\r\n        //(2)call的用法：定义一个布尔类型的变量用于存储116\r\n        bool success;\r\n        //call的使用语法：[调用者的address].call{value:[传入的余额]}(\"[需要调用的函数，如果不需要则不用写]\")\r\n        (success,)=payable(msg.sender).call{value:address(this).balance}(\"\");\r\n\r\n        //将该地址的用户的value值清0，防止BUG\r\n        fundersToAmount[msg.sender]=0;\r\n\r\n        //getFund函数执行完成之后，修改getFundSuccess变量状态\r\n        getFundSuccess=true;\r\n    }\r\n    \r\n\r\n    //退款函数：该函数表示没有获取筹集到的资金的话进行退款的操作\r\n    function reFund() external windowClosed {\r\n        //使用require进行判断，判断本合约地址中筹集到资金是否小于最大值(TARGET)，如果满足就执行下面的操作\r\n        require(converEthToUsd(address(this).balance)<TARGET,\"Target is reached\");\r\n\r\n\r\n        //根据地址查找value的值(既存入的资金)，并且存入到变量amount中\r\n        uint256 amount=fundersToAmount[msg.sender];\r\n\r\n        //判断该用户存入的资金是不是等于0\r\n        require( amount != 0,\"there is not fund for you!\");\r\n\r\n        //退款操作\r\n        bool success;\r\n         (success,)=payable(msg.sender).call{value:amount}(\"\");\r\n\r\n        require(success,\"transfer tx failed\");\r\n\r\n        //将该地址的中的value值清0，防止重复提款\r\n        fundersToAmount[msg.sender]=0;\r\n    }\r\n\r\n    //定义一个modifier用于存储require的校验\r\n    modifier windowClosed(){\r\n         //判断当前的退回余额的时间是不是在锁定期内，如果超过这个锁定时间，则报错\r\n        require(block.timestamp>=deploymentTimeStamp+lockTime,\"Window is not closed!\");\r\n        _;\r\n    }\r\n\r\n    //定义一个判断提款退款地址的校验\r\n    modifier onlyOwner(){\r\n        //如果当前的提款人的地址和最初的发起人地址一致，才能进行提款\r\n         require(msg.sender==Owner,\"this function can only be called by owner\");\r\n         _;\r\n    } \r\n\r\n}"
+    }
+  },
+  "settings": {
+    "evmVersion": "paris",
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}

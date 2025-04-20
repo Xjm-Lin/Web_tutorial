@@ -36,12 +36,17 @@ contract FundMe {
     bool public getFundSuccess =false;
     
     //预言机合约中需要用到的变量
-    AggregatorV3Interface internal dataFeed;
+    AggregatorV3Interface public dataFeed;
 
-    constructor(uint256 _lockTime){
+    //定义事件类型的变量用于记录getFund()函数的单元测试是否执行成功
+    event FundWithdrawByOwner(uint256);
+    //定义事件类型的变量用于记录reFund()函数的单元测试是否执行成功
+    event RefundByFunder(address,uint256);
+
+    constructor(uint256 _lockTime,address dataFeedAddr){
         //在构造器中初始化变量dataFeed，调用AggregatorV3Interface函数
         //传入的参数是ETH对比USD的价格
-        dataFeed=AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);
+        dataFeed=AggregatorV3Interface(dataFeedAddr);
         //初始化当前用户
         Owner=msg.sender;
         //定义当前的筹集时间
@@ -115,14 +120,17 @@ contract FundMe {
 
         //(2)call的用法：定义一个布尔类型的变量用于存储116
         bool success;
+        uint256 balance=address(this).balance;
         //call的使用语法：[调用者的address].call{value:[传入的余额]}("[需要调用的函数，如果不需要则不用写]")
-        (success,)=payable(msg.sender).call{value:address(this).balance}("");
+        (success,)=payable(msg.sender).call{value:balance}("");
 
         //将该地址的用户的value值清0，防止BUG
         fundersToAmount[msg.sender]=0;
 
         //getFund函数执行完成之后，修改getFundSuccess变量状态
         getFundSuccess=true;
+
+        emit FundWithdrawByOwner(balance);
     }
     
 
@@ -134,6 +142,7 @@ contract FundMe {
 
         //根据地址查找value的值(既存入的资金)，并且存入到变量amount中
         uint256 amount=fundersToAmount[msg.sender];
+        uint256 balance=fundersToAmount[msg.sender];
 
         //判断该用户存入的资金是不是等于0
         require( amount != 0,"there is not fund for you!");
@@ -146,6 +155,9 @@ contract FundMe {
 
         //将该地址的中的value值清0，防止重复提款
         fundersToAmount[msg.sender]=0;
+
+        emit RefundByFunder(msg.sender,balance);
+
     }
 
     //定义一个modifier用于存储require的校验
